@@ -291,15 +291,124 @@ app.delete("/api/v1/delete_sensor", (req, res) => {
 });
 
 app.post("/api/v1/sensor_data", (req, res) => {
-
+    const sensor_api_key = req.query.sensor_api_key;
+    const sensor_data = req.body;
+    if (sensor_api_key){
+        db.serialize(() => {
+            db.all("SELECT * FROM Sensor WHERE sensor_api_key = ?", [sensor_api_key], (err, rows) => {
+                if (err) {
+                    console.error(err.message);
+                    res.status(500).json({error: err.message});
+                    return;
+                }
+                if (rows.length > 0){
+                    sensor_data.timestamp = Date.now();
+                    db.run("INSERT INTO SensorData (sensor_id, sensor_data) VALUES (?, ?)", [rows[0].sensor_id, JSON.stringify(sensor_data)], (err) => {
+                        if (err) {
+                            console.error(err.message);
+                            res.status(500).json({error: err.message});
+                            return;
+                        }
+                        res.status(201).json({message: "Sensor data added"});
+                        return;
+                    });
+                } else {
+                    res.status(400).json({error: "Invalid sensor_api_key"});
+                    return;
+                }
+            });
+        });
+    } else {
+        res.status(400).json({error: "Missing sensor_api_key"});
+        return;
+    }
 });
 
 app.get("/api/v1/sensor_data", (req, res) => {
-
+    const query = req.query;
+    const company_api_key = query.company_api_key;
+    const sensor_id = JSON.parse(query.sensor_id);
+    if (company_api_key && sensor_id){
+        db.serialize(() => {
+            db.all("SELECT * FROM Company WHERE company_api_key = ?", [company_api_key], (err, rows) => {
+                if (err) {
+                    console.error(err.message);
+                    res.status(500).json({error: err.message});
+                    return;
+                }
+                if (rows.length > 0){
+                    db.all(`SELECT * FROM Sensor WHERE sensor_id IN (` + sensor_id + `)`, (err, rows2) => {
+                        if (err) {
+                            console.error(err.message);
+                            res.status(500).json({error: err.message});
+                            return;
+                        }
+                        if (rows2.length > 0){
+                            db.all(`SELECT * FROM SensorData WHERE sensor_id IN (` + sensor_id + `)`, (err, rows3) => {
+                                if (err) {
+                                    console.error(err.message);
+                                    res.status(500).json({error: err.message});
+                                    return;
+                                }
+                                var response = [];
+                                for (let i = 0; i < rows3.length; i++){
+                                    var data = JSON.parse(rows3[i].sensor_data);
+                                    if (data.timestamp >= query.from && data.timestamp <= query.to){
+                                        rows3[i].sensor_data = data;
+                                        response.push(rows3[i]);
+                                    }
+                                }
+                                res.status(200).json(response);
+                                return;
+                            });
+                        } else {
+                            res.status(400).json({error: "Invalid sensor_id"});
+                            return;
+                        }
+                    });
+                } else {
+                    res.status(400).json({error: "Invalid company_api_key"});
+                    return;
+                }
+            });
+        });
+    } else {
+        res.status(400).json({error: "Missing company_api_key"});
+        return;
+    }
 });
 
 app.put("/api/v1/update_sensor_data", (req, res) => {
-
+    const query = req.query;
+    const sensor_api_key = query.sensor_api_key;
+    if (sensor_api_key){
+        db.serialize(() => {
+            db.all("SELECT * FROM Sensor WHERE sensor_api_key = ?", [sensor_api_key], (err, rows) => {
+                if (err) {
+                    console.error(err.message);
+                    res.status(500).json({error: err.message});
+                    return;
+                }
+                if (rows.length > 0){
+                    db.run("UPDATE SensorData SET sensor_data = ? WHERE ID = ? AND sensor_api_key = ?", [query.sensor_data, query.ID, sensor_api_key], (err) => {
+                        if (err) {
+                            console.error(err.message);
+                            res.status(500).json({error: err.message});
+                            return;
+                        }
+                        res.status(200).json({message: "Sensor data updated"});
+                        return;
+                    });
+                } else {
+                    res.status(400).json({error: "Invalid sensor_api_key"});
+                    return;
+                }
+            });
+        });
+    } else {
+        res.status(400).json({error: "Missing sensor_api_key"});
+        return;
+    }
 });
 
 app.delete("/api/v1/delete_sensor_data", (req, res) => {
@@ -340,13 +449,8 @@ app.listen(port, () => {
         db.run("CREATE TABLE Admin (Username TEXT, Password TEXT)");
         db.run("CREATE TABLE Company (ID INTEGER PRIMARY KEY AUTOINCREMENT, company_name TEXT, company_api_key TEXT)");
         db.run("CREATE TABLE Location (company_id INTEGER, location_name TEXT, location_country TEXT, location_city TEXT, location_meta TEXT)");
-        db.run("CREATE TABLE Sensor (location_id INTEGER, sensor_id INTEGER, sensor_name TEXT, sensor_category TEXT, sensor_meta TEXT, sensor_api_key TEXT)");
+        db.run("CREATE TABLE Sensor (sensor_id INTEGER PRIMARY KEY AUTOINCREMENT, location_id INTEGER, sensor_name TEXT, sensor_category TEXT, sensor_meta TEXT, sensor_api_key TEXT)");
         db.run("CREATE TABLE SensorData (ID INTEGER PRIMARY KEY AUTOINCREMENT, sensor_id INTEGER, sensor_data TEXT)");
-        db.run("INSERT INTO Company (company_name, company_api_key) VALUES ('Test Company', 'key')");
-        db.run("INSERT INTO Location (company_id, location_name, location_country, location_city, location_meta) VALUES (1, 'test1', 'Test Country', 'Test City', 'Test Meta')");
-        db.run("INSERT INTO Location (company_id, location_name, location_country, location_city, location_meta) VALUES (2, 'test2', 'Test Country', 'Test City', 'Test Meta')");
-        db.run("INSERT INTO Sensor (location_id, sensor_id, sensor_name, sensor_category, sensor_meta, sensor_api_key) VALUES (1, 1, 'Test Sensor', 'Test Category', 'Test Meta', 'key')");
-        db.run("INSERT INTO Sensor (location_id, sensor_id, sensor_name, sensor_category, sensor_meta, sensor_api_key) VALUES (2, 2, 'Test Sensor', 'Test Category', 'Test Meta', 'key')");
     });
     console.log(`API RUN AT http://localhost:${port}`);
 });
